@@ -26,6 +26,11 @@ export interface MCPTool {
   server: string
 }
 
+export interface GmailTool extends MCPTool {
+  server: 'gmail-server'
+  name: 'gmail_read' | 'gmail_send' | 'gmail_search' | 'gmail_compose' | 'gmail_manage'
+}
+
 export interface MCPContext {
   id: string
   name: string

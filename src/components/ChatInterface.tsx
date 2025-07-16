@@ -1,12 +1,15 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, User, Settings, Zap, Database, Cpu } from 'lucide-react'
+import { Send, Bot, User, Settings, Zap, Database, Cpu, Mail } from 'lucide-react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Card } from './ui/card'
 import { Badge } from './ui/badge'
 import { ScrollArea } from './ui/scroll-area'
 import { Separator } from './ui/separator'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
+import { Toaster } from './ui/toaster'
 import { MCPMessage, MCPServer, ChatState } from '../types/mcp'
+import { GmailIntegration } from './GmailIntegration'
 
 export function ChatInterface() {
   const [chatState, setChatState] = useState<ChatState>({
@@ -40,6 +43,24 @@ export function ChatInterface() {
         description: 'Query databases and data sources',
         parameters: { query: 'string', source: 'string' },
         server: 'data-server'
+      },
+      {
+        name: 'gmail_read',
+        description: 'Read and retrieve Gmail messages',
+        parameters: { query: 'string', limit: 'number' },
+        server: 'gmail-server'
+      },
+      {
+        name: 'gmail_send',
+        description: 'Send Gmail messages',
+        parameters: { to: 'string[]', subject: 'string', body: 'string' },
+        server: 'gmail-server'
+      },
+      {
+        name: 'gmail_search',
+        description: 'Search Gmail messages',
+        parameters: { query: 'string', from: 'string', subject: 'string' },
+        server: 'gmail-server'
       }
     ],
     context: []
@@ -70,11 +91,38 @@ export function ChatInterface() {
       status: 'connecting',
       capabilities: ['data_query', 'analytics'],
       lastPing: new Date()
+    },
+    {
+      id: 'gmail-server',
+      name: 'Gmail Server',
+      url: 'mcp://gmail.google.com',
+      status: 'connected',
+      capabilities: ['gmail_read', 'gmail_send', 'gmail_search', 'gmail_manage'],
+      lastPing: new Date()
     }
   ])
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  const handleGmailToChat = (message: string) => {
+    const gmailMessage: MCPMessage = {
+      id: Date.now().toString(),
+      role: 'assistant',
+      content: message,
+      timestamp: new Date(),
+      metadata: {
+        server: 'gmail-server',
+        tools: ['gmail_read'],
+        context: 'gmail_integration'
+      }
+    }
+
+    setChatState(prev => ({
+      ...prev,
+      messages: [...prev.messages, gmailMessage]
+    }))
+  }
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -127,6 +175,26 @@ export function ChatInterface() {
   const generateMCPResponse = (input: string): string => {
     const lowerInput = input.toLowerCase()
     
+    if (lowerInput.includes('email') || lowerInput.includes('gmail') || lowerInput.includes('mail')) {
+      return `I'll help you with Gmail using the Gmail Server via MCP protocol...
+
+📧 **Gmail Integration:**
+- Read and manage your emails
+- Send new messages
+- Search through your mailbox
+- Organize with labels and filters
+- Handle attachments
+
+**Available Gmail Commands:**
+- "Show me unread emails"
+- "Compose an email to john@example.com"
+- "Search for emails from Sarah"
+- "What are my recent emails about?"
+- "Send an email with subject 'Meeting Tomorrow'"
+
+Use the Gmail tab in the sidebar to interact with your emails directly, or ask me to help you with specific email tasks!`
+    }
+    
     if (lowerInput.includes('search') || lowerInput.includes('find')) {
       return `I'll search for information about "${input}". Using the web search tool from the Search Server to gather relevant data...
 
@@ -169,6 +237,7 @@ Based on the search results, here's what I found: [Simulated search results woul
 - Use context-aware tools
 - Maintain conversation history
 - Provide real-time responses
+- **NEW: Gmail integration** - manage your emails seamlessly
 
 How would you like me to help you further?`
   }
@@ -180,6 +249,11 @@ How would you like me to help you further?`
     if (lowerInput.includes('search') || lowerInput.includes('find')) tools.push('web_search')
     if (lowerInput.includes('code') || lowerInput.includes('analyze')) tools.push('code_analysis')
     if (lowerInput.includes('data') || lowerInput.includes('query')) tools.push('data_query')
+    if (lowerInput.includes('email') || lowerInput.includes('gmail') || lowerInput.includes('mail')) {
+      if (lowerInput.includes('send') || lowerInput.includes('compose')) tools.push('gmail_send')
+      else if (lowerInput.includes('search')) tools.push('gmail_search')
+      else tools.push('gmail_read')
+    }
     
     return tools
   }
@@ -187,6 +261,7 @@ How would you like me to help you further?`
   const selectServer = (input: string): string => {
     const lowerInput = input.toLowerCase()
     
+    if (lowerInput.includes('email') || lowerInput.includes('gmail') || lowerInput.includes('mail')) return 'gmail-server'
     if (lowerInput.includes('search') || lowerInput.includes('find')) return 'search-server'
     if (lowerInput.includes('code') || lowerInput.includes('analyze')) return 'code-server'
     if (lowerInput.includes('data') || lowerInput.includes('query')) return 'data-server'
@@ -223,51 +298,70 @@ How would you like me to help you further?`
 
   return (
     <div className="flex h-screen bg-background">
-      {/* Sidebar - MCP Servers */}
-      <div className="w-80 border-r border-border bg-card p-4 flex flex-col">
-        <div className="flex items-center gap-2 mb-6">
-          <Cpu className="h-6 w-6 text-primary" />
-          <h2 className="text-lg font-semibold">MCP Servers</h2>
-        </div>
-        
-        <div className="space-y-3 flex-1">
-          {servers.map((server) => (
-            <Card key={server.id} className="p-3 hover:bg-accent/50 transition-colors">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="font-medium text-sm">{server.name}</h3>
-                <div className="flex items-center gap-1">
-                  <div className={`w-2 h-2 rounded-full ${getStatusColor(server.status)}`} />
-                  <span className="text-xs text-muted-foreground">{getStatusText(server.status)}</span>
-                </div>
+      {/* Sidebar - MCP Servers & Gmail */}
+      <div className="w-80 border-r border-border bg-card flex flex-col">
+        <Tabs defaultValue="servers" className="flex-1 flex flex-col">
+          <TabsList className="grid w-full grid-cols-2 m-4 mb-0">
+            <TabsTrigger value="servers" className="gap-2">
+              <Cpu className="h-4 w-4" />
+              Servers
+            </TabsTrigger>
+            <TabsTrigger value="gmail" className="gap-2">
+              <Mail className="h-4 w-4" />
+              Gmail
+            </TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="servers" className="flex-1 flex flex-col p-4 pt-6">
+            <div className="flex items-center gap-2 mb-6">
+              <Cpu className="h-6 w-6 text-primary" />
+              <h2 className="text-lg font-semibold">MCP Servers</h2>
+            </div>
+            
+            <div className="space-y-3 flex-1">
+              {servers.map((server) => (
+                <Card key={server.id} className="p-3 hover:bg-accent/50 transition-colors">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-medium text-sm">{server.name}</h3>
+                    <div className="flex items-center gap-1">
+                      <div className={`w-2 h-2 rounded-full ${getStatusColor(server.status)}`} />
+                      <span className="text-xs text-muted-foreground">{getStatusText(server.status)}</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-2">{server.url}</p>
+                  <div className="flex flex-wrap gap-1">
+                    {server.capabilities.map((cap) => (
+                      <Badge key={cap} variant="secondary" className="text-xs px-1 py-0">
+                        {cap}
+                      </Badge>
+                    ))}
+                  </div>
+                </Card>
+              ))}
+            </div>
+
+            <Separator className="my-4" />
+            
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Zap className="h-4 w-4 text-accent" />
+                <h3 className="text-sm font-medium">Available Tools</h3>
               </div>
-              <p className="text-xs text-muted-foreground mb-2">{server.url}</p>
-              <div className="flex flex-wrap gap-1">
-                {server.capabilities.map((cap) => (
-                  <Badge key={cap} variant="secondary" className="text-xs px-1 py-0">
-                    {cap}
-                  </Badge>
+              <div className="space-y-2">
+                {chatState.availableTools.map((tool) => (
+                  <div key={tool.name} className="text-xs p-2 bg-muted rounded-md">
+                    <div className="font-medium">{tool.name}</div>
+                    <div className="text-muted-foreground">{tool.description}</div>
+                  </div>
                 ))}
               </div>
-            </Card>
-          ))}
-        </div>
-
-        <Separator className="my-4" />
-        
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <Zap className="h-4 w-4 text-accent" />
-            <h3 className="text-sm font-medium">Available Tools</h3>
-          </div>
-          <div className="space-y-2">
-            {chatState.availableTools.map((tool) => (
-              <div key={tool.name} className="text-xs p-2 bg-muted rounded-md">
-                <div className="font-medium">{tool.name}</div>
-                <div className="text-muted-foreground">{tool.description}</div>
-              </div>
-            ))}
-          </div>
-        </div>
+            </div>
+          </TabsContent>
+          
+          <TabsContent value="gmail" className="flex-1 flex flex-col">
+            <GmailIntegration onSendToChat={handleGmailToChat} />
+          </TabsContent>
+        </Tabs>
       </div>
 
       {/* Main Chat Area */}
@@ -399,6 +493,7 @@ How would you like me to help you further?`
           </div>
         </div>
       </div>
+      <Toaster />
     </div>
   )
 }
